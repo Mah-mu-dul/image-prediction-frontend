@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doctor's Portal Image Prediction</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@2.1.0/dist/full.css" rel="stylesheet">
+    <style>
+        #loader {
+            display: none;
+        }
+
+        #canvas {
+            max-width: 800px;
+            width: 100%;
+            height: auto;
+            /* Maintain aspect ratio */
+            border: 1px solid #ccc;
+            /* Add a border to the canvas */
+        }
+
+    </style>
+</head>
+
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded shadow-md w-full max-w-lg">
+        <h1 class="text-3xl font-bold mb-6 text-center text-blue-700">Doctor's Portal Image Prediction</h1>
+        <form id="upload-form" class="flex flex-col space-y-4">
+            <input type="file" id="image" name="file" accept="image/*"
+                class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+            <button type="submit" class="btn btn-primary">Upload and Predict</button>
+        </form>
+        <div id="loader" class="mt-6 text-center">
+            <div class="spinner-border animate-spin inline-block w-8 h-8 border-4 rounded-full" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Processing...</p>
+        </div>
+        <canvas id="canvas" class="mt-6 rounded"></canvas>
+        <div id="results" class="mt-6 p-4 bg-gray-50 border rounded"></div>
+    </div>
+
+    <script>
+        document.getElementById('upload-form').addEventListener('submit', async function (event) {
+            event.preventDefault();
+            const fileInput = document.getElementById('image');
+            const file = fileInput.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // Show loader
+            document.getElementById('loader').style.display = 'block';
+
+            const response = await fetch('http://127.0.0.1:5000/predict/', {
+                method: 'POST',
+                body: formData
+            });
+
+            // Hide loader
+            document.getElementById('loader').style.display = 'none';
+
+            const result = await response.json();
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '';
+
+            if (response.ok) {
+                const results = result.results;
+                if (results && results.length > 0) {
+                    // Load image to canvas
+                    const img = new Image();
+                    const canvas = document.getElementById('canvas');
+                    const ctx = canvas.getContext('2d');
+
+                    img.onload = () => {
+                        // Set canvas dimensions to maintain aspect ratio
+                        const aspectRatio = img.width / img.height;
+                        canvas.width = Math.min(800, img.width); // Limit width to 800px
+                        canvas.height = canvas.width / aspectRatio; // Adjust height to maintain aspect ratio
+
+                        // Draw the image on the canvas
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                        // Draw bounding boxes
+                        results.forEach(({ box, confidence, class_name }) => {
+                            const [x1, y1, x2, y2] = box;
+                            const width = x2 - x1;
+                            const height = y2 - y1;
+
+                            // Scale box coordinates according to the canvas size
+                            const scaleX = canvas.width / img.width;
+                            const scaleY = canvas.height / img.height;
+
+                            ctx.strokeStyle = 'red';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(x1 * scaleX, y1 * scaleY, width * scaleX, height * scaleY);
+
+                            // Draw label background
+                            ctx.fillStyle = 'red';
+                            const text = `${class_name} (${(confidence * 100).toFixed(2)}%)`;
+                            ctx.font = '18px Arial';
+                            const textWidth = ctx.measureText(text).width;
+                            ctx.fillRect(x1 * scaleX, y1 * scaleY - 20, textWidth + 4, 20);
+
+                            // Draw label text
+                            ctx.fillStyle = 'white';
+                            ctx.fillText(text, x1 * scaleX, y1 * scaleY - 5);
+                        });
+                    };
+
+                    // Read the image file as a data URL
+                    const reader = new FileReader();
+                    reader.onload = function (e) {
+                        img.src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    resultsDiv.innerHTML = '<p class="text-center text-red-500">No objects detected.</p>';
+                }
+            } else {
+                resultsDiv.innerHTML = `<p class="text-center text-red-500">${result.error}</p>`;
+            }
+        });
+    </script>
+</body>
+
+</html>
